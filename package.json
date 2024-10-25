@@ -1,0 +1,17 @@
+{
+  "name": "ctp_scaper",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch index",
+    "start": "node index"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "puppeteer": "^23.6.0"
+  }
+}
