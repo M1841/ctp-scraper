@@ -12,6 +12,7 @@
   "author": "",
   "license": "UNLICENSED",
   "dependencies": {
+    "express": "^4.21.1",
     "puppeteer": "^23.6.0"
   }
 }
