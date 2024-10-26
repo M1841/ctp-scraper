@@ -102,7 +102,7 @@ export default class Line {
 
       const today = new Date().getDay();
       switch (today) {
-        case 7:
+        case 0:
           currentTable = tables[2];
           break;
         case 6:
