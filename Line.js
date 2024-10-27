@@ -1,9 +1,25 @@
 import puppeteer, { Browser } from "puppeteer";
+import Store from "./Store.js";
 
 export default class Line {
+  static baseUrl = "https://ctpcj.ro/index.php/ro/orare-linii/";
+  static lineTypes = [
+    "urban",
+    "metropolitan",
+    "night",
+    "express",
+    "supermarket",
+  ];
+  static typeUrls = {
+    urban: this.baseUrl + "linii-urbane/",
+    metropolitan: this.baseUrl + "linii-metropolitane/",
+    night: this.baseUrl + "transport-noapte/",
+    express: this.baseUrl + "linie-expres/",
+    supermarket: this.baseUrl + "linii-supermarket/",
+  };
+
   static browser = null;
   /**
-   *
    * @returns {Promise<Browser>}
    */
   static getBrowserInstance = async () => {
@@ -15,25 +31,27 @@ export default class Line {
 
   /**
    * @param {string} lineNumber
-   * @returns {Promise<{ result: any; error: null; } | { result: null; error: { status: number; message: string; }; }>}
+   * @returns {Promise<{ result: string; error: null; } | { result: null; error: HttpError; }>}
    */
   static fetchUrl = async (lineNumber) => {
-    let url = "https://ctpcj.ro/index.php/ro/orare-linii/";
+    if (Store.data?.lines && Store.data.lines[lineNumber]) {
+      console.log(`Serving cached url for line ${lineNumber}`);
+      return { result: Store.data.lines[lineNumber].url, error: null };
+    }
+
+    let baseUrl = this.typeUrls["urban"];
     switch (true) {
       case lineNumber[0] === "M":
-        url += "linii-metropolitane/";
+        baseUrl = this.typeUrls["metropolitan"];
         break;
       case lineNumber.at(-1) === "N":
-        url += "transport-noapte/";
+        baseUrl = this.typeUrls["night"];
         break;
       case lineNumber.at(-1) === "E":
-        url += "linie-expres/";
+        baseUrl = this.typeUrls["express"];
         break;
       case lineNumber.slice(0, 2) === "99":
-        url += "linii-supermarket/";
-        break;
-      default:
-        url += "linii-urbane/";
+        baseUrl = this.typeUrls["supermarket"];
         break;
     }
 
@@ -43,21 +61,21 @@ export default class Line {
     await page.setRequestInterception(true);
     page.on("request", (req) => {
       const resourceType = req.resourceType();
-      if (["image", "sylesheet", "font"].includes(resourceType)) {
+      if (["image", "stylesheet", "font"].includes(resourceType)) {
         req.abort();
       } else {
         req.continue();
       }
     });
 
-    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 0 });
     await page.waitForSelector("div.tzPortfolio");
 
     let lineUrl = await page.evaluate((lineNumber) => {
       const anchors = document.querySelectorAll("div.tzPortfolio a");
 
-      for (let anchor of anchors) {
-        if (anchor.textContent.includes(" " + lineNumber)) {
+      for (const anchor of anchors) {
+        if (anchor.textContent.trim().split(" ")[1] === lineNumber) {
           return { result: anchor.href, error: null };
         }
       }
@@ -68,14 +86,20 @@ export default class Line {
     }, lineNumber);
 
     await page.close();
+    console.log(`Serving fetched url for line ${lineNumber}`);
     return lineUrl;
   };
 
   /**
    * @param {string} lineNumber
-   * @returns {Promise<{ result: { station: string; departures: Date[]; }[]; error: null; } | { result: null; error: { status: number; message: string; }; }>}
+   * @returns {Promise<{ result: StationDepartures[]; error: null; } | { result: null; error: HttpError; }>}
    */
   static fetchSchedule = async (lineNumber) => {
+    if (Store.data?.schedules && Store.data.schedules[lineNumber]) {
+      console.log(`Serving cached schedule for line ${lineNumber}`);
+      return { result: Store.data.schedules[lineNumber], error: null };
+    }
+
     let { result: url, error } = await this.fetchUrl(lineNumber);
     if (error) {
       return { result: null, error: error };
@@ -86,36 +110,36 @@ export default class Line {
     await page.setRequestInterception(true);
     page.on("request", (req) => {
       const resourceType = req.resourceType();
-      if (["image", "sylesheet", "font"].includes(resourceType)) {
+      if (["image", "stylesheet", "font"].includes(resourceType)) {
         req.abort();
       } else {
         req.continue();
       }
     });
 
-    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 0 });
     await page.waitForSelector("table.tztable");
 
     let schedule = await page.evaluate(() => {
-      const tables = document.querySelectorAll("table.tztable");
-      let currentTable;
-
+      let tableIndex = 1;
       const today = new Date().getDay();
       switch (today) {
         case 0:
-          currentTable = tables[2];
+          tableIndex = 2;
           break;
         case 6:
-          currentTable = tables[1];
+          tableIndex = 1;
           break;
-        default:
-          currentTable = tables[0];
+      }
+      const table = document.querySelectorAll("table.tztable")[tableIndex];
+      if (!table) {
+        return { result: [], error: null };
       }
 
       const rows = Array.from(
-        currentTable.querySelector("tbody").querySelectorAll("tr")
+        table.querySelector("tbody").querySelectorAll("tr")
       );
-      const stations = Array.from(currentTable.querySelectorAll("th"));
+      const stations = Array.from(table.querySelectorAll("th"));
 
       let result = stations.map((station) => ({
         station: station.textContent.trim(),
@@ -123,7 +147,7 @@ export default class Line {
       }));
 
       let time = new Date();
-      for (let row of rows) {
+      for (const row of rows) {
         const cells = Array.from(row.querySelectorAll("td"));
         for (let index = 0; index < cells.length; index++) {
           const cell = cells[index];
@@ -139,6 +163,98 @@ export default class Line {
     });
 
     await page.close();
+    console.log(`Serving fetched schedule for line ${lineNumber}`);
     return schedule;
+  };
+
+  /**
+   * @returns {Promise<{ result: LinesResult; error: null } | { result: null; error: HttpError; }>}
+   */
+  static fetchAll = async () => {
+    if (Store.data?.lines && Object.keys(Store.data.lines).length > 0) {
+      console.log("Serving cached lines");
+      return { result: Store.data.lines, error: null };
+    }
+
+    const responses = await Promise.all(
+      this.lineTypes.map((lineType) => this.fetchAllByType(lineType))
+    );
+    /**
+     * @type LinesResult
+     */
+    let result = [];
+    for (const response of responses) {
+      if (response.error) {
+        return { result: null, error: error };
+      }
+      result = Object.fromEntries([
+        ...Object.entries(result),
+        ...Object.entries(response.result),
+      ]);
+    }
+
+    console.log("Serving fetched lines");
+    return { result: result, error: null };
+  };
+
+  /**
+   * @param {LineType} lineType
+   * @returns {Promise<{ result: LinesResult; error: null } | { result: null; error: HttpError; }>}
+   */
+  static fetchAllByType = async (lineType) => {
+    if (!this.lineTypes.includes(lineType.toLowerCase())) {
+      return {
+        result: null,
+        error: { status: 400, message: `${lineType} is an invalid line type` },
+      };
+    }
+    if (Store.data?.lines && Object.keys(Store.data.lines).length > 0) {
+      console.log(`Serving cached ${lineType} lines`);
+      return {
+        result: Object.fromEntries(
+          Object.entries(Store.data.lines).filter(
+            ([_, line]) => line.type === lineType
+          )
+        ),
+        error: null,
+      };
+    }
+    const url = this.typeUrls[lineType];
+
+    const browser = await this.getBrowserInstance();
+    const page = await browser.newPage();
+
+    await page.setRequestInterception(true);
+    page.on("request", (req) => {
+      const resourceType = req.resourceType();
+      if (["image", "stylesheet", "font"].includes(resourceType)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 0 });
+    await page.waitForSelector("div.tzPortfolio");
+
+    let lines = await page.evaluate((lineType) => {
+      let result = {};
+      const anchors = document.querySelectorAll("div.tzPortfolio a");
+
+      for (const anchor of anchors) {
+        const [text, number] = anchor.textContent.trim().split(" ");
+        if (text === "Linia") {
+          result[number] = {
+            url: anchor.href,
+            type: lineType,
+          };
+        }
+      }
+      return result;
+    }, lineType);
+
+    await page.close();
+    console.log(`Serving fetched ${lineType} lines`);
+    return { result: lines, error: null };
   };
 }
