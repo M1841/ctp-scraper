@@ -1,6 +1,9 @@
 import puppeteer, { Browser } from "puppeteer";
 import Store from "./Store.js";
 
+/**
+ * Static class providing an API for operations on bus line data
+ */
 export default class Line {
   static baseUrl = "https://ctpcj.ro/index.php/ro/orare-linii/";
   static lineTypes = [
@@ -18,9 +21,13 @@ export default class Line {
     supermarket: this.baseUrl + "linii-supermarket/",
   };
 
+  /**
+   * @type {Browser | null}
+   */
   static browser = null;
   /**
-   * @returns {Promise<Browser>}
+   * Get a singleton instance of the Puppeteer browser
+   * @returns {Promise<Browser>} A promise that resolves to a Puppeteer browser instance
    */
   static getBrowserInstance = async () => {
     if (!this.browser) {
@@ -30,8 +37,15 @@ export default class Line {
   };
 
   /**
-   * @param {string} lineNumber
-   * @returns {Promise<{ result: string; error: null; } | { result: null; error: HttpError; }>}
+   * Fetch the URL for a specific bus line number
+   * @param {string} lineNumber The bus line number to fetch the URL for
+   * @returns {Promise<{
+   *   result: string;
+   *   error: null;
+   * } | {
+   *   result: null;
+   *   error: HttpError;
+   * }>} A promise that resolves to an object containing the URL or an error
    */
   static fetchUrl = async (lineNumber) => {
     if (Store.data?.lines && Store.data.lines[lineNumber]) {
@@ -91,8 +105,15 @@ export default class Line {
   };
 
   /**
-   * @param {string} lineNumber
-   * @returns {Promise<{ result: StationDepartures[]; error: null; } | { result: null; error: HttpError; }>}
+   * Fetch the schedule for a bus line number
+   * @param {string} lineNumber The line number to fetch the schedule for
+   * @returns {Promise<{
+   *   result: StationDepartures[];
+   *   error: null;
+   * } | {
+   *   result: null;
+   *   error: HttpError;
+   * }>} A promise that resolves to an object containing the schedule or an error
    */
   static fetchSchedule = async (lineNumber) => {
     if (Store.data?.schedules && Store.data.schedules[lineNumber]) {
@@ -168,7 +189,14 @@ export default class Line {
   };
 
   /**
-   * @returns {Promise<{ result: LinesResult; error: null } | { result: null; error: HttpError; }>}
+   * Fetch basic details (number, url and type) for all bus lines
+   * @returns {Promise<{
+   *   result: LinesResult;
+   *   error: null;
+   * } | {
+   *   result: null;
+   *   error: HttpError;
+   * }>} A promise that resolves to an object containing all bus lines or an error
    */
   static fetchAll = async () => {
     if (Store.data?.lines && Object.keys(Store.data.lines).length > 0) {
@@ -180,7 +208,7 @@ export default class Line {
       this.lineTypes.map((lineType) => this.fetchAllByType(lineType))
     );
     /**
-     * @type LinesResult
+     * @type {LinesResult}
      */
     let result = [];
     for (const response of responses) {
@@ -198,8 +226,15 @@ export default class Line {
   };
 
   /**
+   * Fetch basic details (number, url and type) for bus lines of a specific type
    * @param {LineType} lineType
-   * @returns {Promise<{ result: LinesResult; error: null } | { result: null; error: HttpError; }>}
+   * @returns {Promise<{
+   *   result: LinesResult;
+   *   error: null;
+   * } | {
+   *   result: null;
+   *   error: HttpError;
+   * }>} A promise that resolves to an object containing the requested bus lines or an error
    */
   static fetchAllByType = async (lineType) => {
     if (!this.lineTypes.includes(lineType.toLowerCase())) {
