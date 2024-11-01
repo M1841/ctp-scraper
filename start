@@ -1,0 +1,9 @@
+#!/bin/bash
+
+if [[ "$1" == "--docker" ]]; then
+  docker build . -t ctp-scraper
+  docker run -p 8080:8080 ctp-scraper
+else
+  pnpm i
+  pnpm start
+fi

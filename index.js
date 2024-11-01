@@ -1,73 +1,98 @@
-import express from "express";
+import uws from "uWebSockets.js";
 import Line from "./Line.js";
 import Store from "./Store.js";
 
-const app = express();
+const app = uws.App();
 const port = 8080;
 
-app.get("/schedule/:lineNumber", async (req, res) => {
+app.get("/schedule/:lineNumber", async (res, req) => {
+  res.onAborted(() => console.log("Request aborted"));
   try {
-    if (!req?.params?.lineNumber) {
-      return res.status(400);
+    if (!req?.getParameter("lineNumber")) {
+      return res.writeStatus("400").end("Missing line number parameter");
     }
-    const lineNumber = req.params.lineNumber.toUpperCase();
+    const lineNumber = req.getParameter("lineNumber").toUpperCase();
 
     const { result, error } = await Line.fetchSchedule(lineNumber);
     if (error) {
-      return res.status(error.status).send(error.message);
+      return res.writeStatus(error.status.toString()).end(error.message);
     } else {
-      return res.json(result);
+      return res
+        .writeHeader("Content-Type", "application/json")
+        .end(JSON.stringify(result));
     }
   } catch (exception) {
-    return res.status(500).send(exception.message);
+    return res.writeStatus("500").end(exception.message);
   }
 });
 
-app.get("/url/:lineNumber", async (req, res) => {
+app.get("/url/:lineNumber", async (res, req) => {
+  res.onAborted(() => console.log("Request aborted"));
   try {
-    if (!req?.params?.lineNumber) {
-      return res.status(400).send("Missing line number");
+    if (!req?.getParameter("lineNumber")) {
+      return res.writeStatus("400").end("Missing line number parameter");
     }
-    const lineNumber = req.params.lineNumber.toUpperCase();
+    const lineNumber = req.getParameter("lineNumber").toUpperCase();
 
     const { result, error } = await Line.fetchUrl(lineNumber);
     if (error) {
-      return res.status(error.status).send(error.message);
+      return res.writeStatus(error.status.toString()).end(error.message);
     } else {
-      return res.json(result);
+      return res
+        .writeHeader("Content-Type", "application/json")
+        .end(JSON.stringify(result));
     }
   } catch (exception) {
-    return res.status(500).send(exception.message);
+    return res.writeStatus("500").end(exception.message);
   }
 });
 
-app.get("/lines", async (_, res) => {
+app.get("/lines", async (res, _) => {
+  res.onAborted(() => console.log("Request aborted"));
   try {
     const { result, error } = await Line.fetchAll();
     if (error) {
-      return res.status(error.status).send(error.message);
+      return res.writeStatus(error.status.toString()).end(error.message);
     } else {
-      return res.json(result);
+      return res
+        .writeHeader("Content-Type", "application/json")
+        .end(JSON.stringify(result));
     }
   } catch (exception) {
-    return res.status(500).send(exception.message);
+    return res.writeStatus("500").end(exception.message);
   }
 });
 
-app.get("/lines/:lineType", async (req, res) => {
+app.get("/lines/:lineType", async (res, req) => {
+  res.onAborted(() => console.log("Request aborted"));
   try {
-    const { result, error } = await Line.fetchAllByType(req.params.lineType);
+    if (!req?.getParameter("lineType")) {
+      return res.writeStatus("400").end("Missing line type parameter");
+    }
+    const lineType = req.getParameter("lineType").toLowerCase();
+
+    const { result, error } = await Line.fetchAllByType(lineType);
     if (error) {
-      return res.status(error.status).send(error.message);
+      return res.writeStatus(error.status.toString()).end(error.message);
     } else {
-      return res.json(result);
+      return res
+        .writeHeader("Content-Type", "application/json")
+        .end(JSON.stringify(result));
     }
   } catch (exception) {
-    return res.status(500).send(exception.message);
+    return res.writeStatus("500").end(exception.message);
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-  Store.init();
+app.get("/health", (res, _) => {
+  res.writeStatus("200").endWithoutBody();
+});
+
+app.listen(port, async (socket) => {
+  if (socket) {
+    console.log(`Server running at port ${port}`);
+    await Store.init();
+  } else {
+    console.error("Failed starting the server");
+  }
 });

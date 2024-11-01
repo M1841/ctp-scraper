@@ -16,9 +16,9 @@ export default class Store {
   /**
    * Initializes the Store by setting up a cron job and performing an initial data refresh
    */
-  static init = () => {
+  static init = async () => {
     cron.schedule("* 3 * * *", this.refresh);
-    this.refresh();
+    await this.refresh();
   };
 
   /**

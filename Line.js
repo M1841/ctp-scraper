@@ -31,7 +31,15 @@ export default class Line {
    */
   static getBrowserInstance = async () => {
     if (!this.browser) {
-      this.browser = await puppeteer.launch();
+      this.browser = await puppeteer.launch({
+        headless: true,
+        args: [
+          "--disable-gpu",
+          "--disable-dev-shm-usage",
+          "--disable-setuid-sandbox",
+          "--no-sandbox",
+        ],
+      });
     }
     return this.browser;
   };
