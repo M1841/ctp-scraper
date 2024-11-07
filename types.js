@@ -1,6 +1,6 @@
 /**
- * @typedef  {Object} StationDepartures
- * @property {string} station
+ * @typedef  {Object} Station
+ * @property {string} name
  * @property {Date[]} departures
  */
 
@@ -9,23 +9,18 @@
  */
 
 /**
- * @typedef  {Object} LineDetails
- * @property {string} url
- * @property {LineType} type
+ * @typedef  {Object}    Line
+ * @property {string}    url
+ * @property {LineType}  type
+ * @property {Station[]} stations
  */
 
 /**
- * @typedef {Object.<string, LineDetails>} LinesResult
+ * @typedef {Object.<string, Line>} LineMap
  */
 
 /**
  * @typedef  {Object}  HttpError
  * @property {number}  status
  * @property {message} message
- */
-
-/**
- * @typedef  {Object}              Data
- * @property {LinesResult}         lines
- * @property {Object.<string, StationDepartures[]>} schedules
  */

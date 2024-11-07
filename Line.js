@@ -1,5 +1,4 @@
-import puppeteer, { Browser } from "puppeteer";
-import Store from "./Store.js";
+import puppeteer, { Browser, Page } from "puppeteer";
 
 /**
  * Static class providing an API for operations on bus line data
@@ -45,6 +44,22 @@ export default class Line {
   };
 
   /**
+   * Block all image, stylesheet and font requests sent by a page
+   * @param {Page} page The page on which to block unwanted requests
+   */
+  static filterResourceRequests = async (page) => {
+    await page.setRequestInterception(true);
+    page.on("request", (req) => {
+      const resourceType = req.resourceType();
+      if (["image", "stylesheet", "font"].includes(resourceType)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+  };
+
+  /**
    * Fetch the URL for a specific bus line number
    * @param {string} lineNumber The bus line number to fetch the URL for
    * @returns {Promise<{
@@ -56,11 +71,6 @@ export default class Line {
    * }>} A promise that resolves to an object containing the URL or an error
    */
   static fetchUrl = async (lineNumber) => {
-    if (Store.data?.lines && Store.data.lines[lineNumber]) {
-      console.log(`Serving cached url for line ${lineNumber}`);
-      return { result: Store.data.lines[lineNumber].url, error: null };
-    }
-
     let baseUrl = this.typeUrls["urban"];
     switch (true) {
       case lineNumber[0] === "M":
@@ -80,16 +90,7 @@ export default class Line {
     const browser = await this.getBrowserInstance();
     const page = await browser.newPage();
 
-    await page.setRequestInterception(true);
-    page.on("request", (req) => {
-      const resourceType = req.resourceType();
-      if (["image", "stylesheet", "font"].includes(resourceType)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
+    await this.filterResourceRequests(page);
     await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 0 });
     await page.waitForSelector("div.tzPortfolio");
 
@@ -114,7 +115,7 @@ export default class Line {
 
   /**
    * Fetch the schedule for a bus line number
-   * @param {string} lineNumber The line number to fetch the schedule for
+   * @param {string} url The URL with the line's schedule
    * @returns {Promise<{
    *   result: StationDepartures[];
    *   error: null;
@@ -123,29 +124,11 @@ export default class Line {
    *   error: HttpError;
    * }>} A promise that resolves to an object containing the schedule or an error
    */
-  static fetchSchedule = async (lineNumber) => {
-    if (Store.data?.schedules && Store.data.schedules[lineNumber]) {
-      console.log(`Serving cached schedule for line ${lineNumber}`);
-      return { result: Store.data.schedules[lineNumber], error: null };
-    }
-
-    let { result: url, error } = await this.fetchUrl(lineNumber);
-    if (error) {
-      return { result: null, error: error };
-    }
+  static fetchSchedule = async (url) => {
     const browser = await this.getBrowserInstance();
     const page = await browser.newPage();
 
-    await page.setRequestInterception(true);
-    page.on("request", (req) => {
-      const resourceType = req.resourceType();
-      if (["image", "stylesheet", "font"].includes(resourceType)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
+    await this.filterResourceRequests(page);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 0 });
     await page.waitForSelector("table.tztable");
 
@@ -192,52 +175,14 @@ export default class Line {
     });
 
     await page.close();
-    console.log(`Serving fetched schedule for line ${lineNumber}`);
     return schedule;
-  };
-
-  /**
-   * Fetch basic details (number, url and type) for all bus lines
-   * @returns {Promise<{
-   *   result: LinesResult;
-   *   error: null;
-   * } | {
-   *   result: null;
-   *   error: HttpError;
-   * }>} A promise that resolves to an object containing all bus lines or an error
-   */
-  static fetchAll = async () => {
-    if (Store.data?.lines && Object.keys(Store.data.lines).length > 0) {
-      console.log("Serving cached lines");
-      return { result: Store.data.lines, error: null };
-    }
-
-    const responses = await Promise.all(
-      this.lineTypes.map((lineType) => this.fetchAllByType(lineType))
-    );
-    /**
-     * @type {LinesResult}
-     */
-    let result = [];
-    for (const response of responses) {
-      if (response.error) {
-        return { result: null, error: error };
-      }
-      result = Object.fromEntries([
-        ...Object.entries(result),
-        ...Object.entries(response.result),
-      ]);
-    }
-
-    console.log("Serving fetched lines");
-    return { result: result, error: null };
   };
 
   /**
    * Fetch basic details (number, url and type) for bus lines of a specific type
    * @param {LineType} lineType
    * @returns {Promise<{
-   *   result: LinesResult;
+   *   result: LineMap;
    *   error: null;
    * } | {
    *   result: null;
@@ -251,53 +196,77 @@ export default class Line {
         error: { status: 400, message: `${lineType} is an invalid line type` },
       };
     }
-    if (Store.data?.lines && Object.keys(Store.data.lines).length > 0) {
-      console.log(`Serving cached ${lineType} lines`);
-      return {
-        result: Object.fromEntries(
-          Object.entries(Store.data.lines).filter(
-            ([_, line]) => line.type === lineType
-          )
-        ),
-        error: null,
-      };
-    }
     const url = this.typeUrls[lineType];
 
     const browser = await this.getBrowserInstance();
     const page = await browser.newPage();
 
-    await page.setRequestInterception(true);
-    page.on("request", (req) => {
-      const resourceType = req.resourceType();
-      if (["image", "stylesheet", "font"].includes(resourceType)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
+    await this.filterResourceRequests(page);
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 0 });
     await page.waitForSelector("div.tzPortfolio");
 
-    let lines = await page.evaluate((lineType) => {
+    let lines = await page.evaluate(async (lineType) => {
+      /**
+       * @type {LineMap}
+       */
       let result = {};
       const anchors = document.querySelectorAll("div.tzPortfolio a");
 
-      for (const anchor of anchors) {
-        const [text, number] = anchor.textContent.trim().split(" ");
-        if (text === "Linia") {
-          result[number] = {
-            url: anchor.href,
-            type: lineType,
-          };
-        }
-      }
+      await Promise.all(
+        Array.from(anchors).map(async (anchor) => {
+          const [text, number] = anchor.textContent.trim().split(" ");
+          if (text === "Linia") {
+            result[number] = {
+              url: anchor.href,
+              type: lineType,
+              stations: {},
+            };
+          }
+        })
+      );
+
       return result;
     }, lineType);
 
+    await Promise.all(
+      Object.entries(lines).map(async ([_, line]) => {
+        line.stations = await this.fetchSchedule(line.url);
+      })
+    );
+
     await page.close();
-    console.log(`Serving fetched ${lineType} lines`);
     return { result: lines, error: null };
+  };
+
+  /**
+   * Fetch basic details (number, url and type) for all bus lines
+   * @returns {Promise<{
+   *   result: LineMap;
+   *   error: null;
+   * } | {
+   *   result: null;
+   *   error: HttpError;
+   * }>} A promise that resolves to an object containing all bus lines or an error
+   */
+  static fetchAll = async () => {
+    const responses = await Promise.all(
+      this.lineTypes.map((lineType) => this.fetchAllByType(lineType))
+    );
+
+    /**
+     * @type {LineMap}
+     */
+    let result = {};
+    for (const response of responses) {
+      if (response.error) {
+        return { result: null, error: error };
+      }
+      result = Object.fromEntries([
+        ...Object.entries(result),
+        ...Object.entries(response.result),
+      ]);
+    }
+
+    return { result: result, error: null };
   };
 }
